@@ -11,13 +11,6 @@
 #pragma comment(lib, "Advapi32.lib")
 #pragma comment(lib, "Shlwapi.lib")
 
-// Color codes for Windows 10+ terminals
-#define COLOR_INFO    "\033[1;36m"
-#define COLOR_ERROR   "\033[1;31m"
-#define COLOR_WARN    "\033[1;33m"
-#define COLOR_SUCCESS "\033[1;32m"
-#define COLOR_RESET   "\033[0m"
-
 enum class LogLevel { Info, Warn, Error, Success };
 
 class Logger {
@@ -26,14 +19,13 @@ public:
         : logFile(filename, std::ios::app) {}
 
     void log(const std::string& msg, LogLevel level = LogLevel::Info) {
-        const char* color = COLOR_INFO;
         const char* tag = "[INFO]";
-        if (level == LogLevel::Warn) { color = COLOR_WARN; tag = "[WARN]"; }
-        else if (level == LogLevel::Error) { color = COLOR_ERROR; tag = "[ERROR]"; }
-        else if (level == LogLevel::Success) { color = COLOR_SUCCESS; tag = "[SUCCESS]"; }
+        if (level == LogLevel::Warn) { tag = "[WARN]"; }
+        else if (level == LogLevel::Error) { tag = "[ERROR]"; }
+        else if (level == LogLevel::Success) { tag = "[SUCCESS]"; }
 
         std::string timestamp = getTimestamp();
-        std::cout << color << "[VELOX] " << tag << " " << timestamp << " " << msg << COLOR_RESET << std::endl;
+        std::cout << "[VELOX] " << tag << " " << timestamp << " " << msg << std::endl;
         if (logFile.is_open())
             logFile << "[VELOX] " << tag << " " << timestamp << " " << msg << std::endl;
     }
@@ -179,7 +171,7 @@ ServiceHandle CreateDriverService(ServiceHandle& scm, const std::wstring& name, 
 }
 
 void PrintBanner() {
-    std::cout << COLOR_INFO
+    std::cout 
         << "\n"
         << " __      ________ _      ______   __  \n"
         << " \\ \\    / /  ____| |    / __ \\ \\ / /  \n"
@@ -194,20 +186,19 @@ void PrintBanner() {
         << " For legitimate development & research\n"
         << " Absolutely NO cheating or bypassing!\n"
         << "------------------------------------------\n"
-        << COLOR_RESET << std::endl;
+        << std::endl;
 }
 
 
-
 std::wstring GetUserInput(const std::wstring& prompt) {
-    std::wcout << COLOR_INFO << prompt << COLOR_RESET;
+    std::wcout << prompt;
     std::wstring input;
     std::getline(std::wcin, input);
     return input;
 }
 
 bool PromptYesNo(const std::string& prompt, Logger& logger, LogLevel level = LogLevel::Warn) {
-    std::cout << COLOR_WARN << prompt << " (y/n): " << COLOR_RESET;
+    std::cout << prompt << " (y/n): ";
     std::string choice;
     std::getline(std::cin, choice);
     if (choice.empty()) return false;
@@ -325,13 +316,13 @@ int main() {
     }
     logger.log("Admin privileges verified.", LogLevel::Success);
 
-    std::cout << COLOR_INFO << "\nPlease select an operation:\n"
-              << COLOR_SUCCESS << "  [1] Install a kernel-mode driver\n"
-              << COLOR_WARN    << "  [2] Uninstall a kernel-mode driver\n"
-              << COLOR_INFO    << "  [Q] Quit\n" << COLOR_RESET;
+    std::cout << "\nPlease select an operation:\n"
+              << "  [1] Install a kernel-mode driver\n"
+              << "  [2] Uninstall a kernel-mode driver\n"
+              << "  [Q] Quit\n" << std::endl;
 
     std::string choice;
-    std::cout << COLOR_INFO << "Enter your choice: " << COLOR_RESET;
+    std::cout << "Enter your choice: ";
     std::getline(std::cin, choice);
 
     if (choice.empty() || choice[0] == 'q' || choice[0] == 'Q') {
