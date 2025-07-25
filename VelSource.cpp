@@ -8,6 +8,9 @@
 #include <iomanip>
 #include <memory>
 #include <vector>
+#include <random>
+#include <sstream>
+#include <filesystem>
 #pragma comment(lib, "Advapi32.lib")
 #pragma comment(lib, "Shlwapi.lib")
 
@@ -58,7 +61,6 @@ private:
     }
 };
 
-// RAII wrapper for SC_HANDLE
 class ServiceHandle {
 public:
     ServiceHandle(SC_HANDLE h = nullptr) : handle(h) {}
@@ -73,19 +75,50 @@ private:
     SC_HANDLE handle;
 };
 
-std::wstring SanitizePath(std::wstring_view raw) {
-    std::wstring path(raw);
-    // Remove quotes
-    path.erase(std::remove(path.begin(), path.end(), L'"'), path.end());
-    // Trim spaces
-    auto first = path.find_first_not_of(L" \t\r\n");
-    auto last = path.find_last_not_of(L" \t\r\n");
-    if (first == std::wstring::npos || last == std::wstring::npos)
-        return L"";
-    path = path.substr(first, last - first + 1);
-    // Normalize slashes
-    std::replace(path.begin(), path.end(), L'/', L'\\');
-    return path;
+namespace Helpers {
+    std::wstring SanitizePath(std::wstring_view raw) {
+        std::wstring path(raw);
+        path.erase(std::remove(path.begin(), path.end(), L'"'), path.end());
+        auto first = path.find_first_not_of(L" \t\r\n");
+        auto last = path.find_last_not_of(L" \t\r\n");
+        if (first == std::wstring::npos || last == std::wstring::npos)
+            return L"";
+        path = path.substr(first, last - first + 1);
+        std::replace(path.begin(), path.end(), L'/', L'\\');
+        return path;
+    }
+
+    std::wstring GetServiceName(const std::wstring& path) {
+        size_t pos = path.find_last_of(L"\\/");
+        std::wstring filename = (pos != std::wstring::npos) ? path.substr(pos + 1) : path;
+        pos = filename.find_last_of(L".");
+        std::wstring base = (pos != std::wstring::npos) ? filename.substr(0, pos) : filename;
+        // Add random 4-digit hex suffix
+        std::random_device rd;
+        std::mt19937 gen(rd());
+        std::uniform_int_distribution<> dis(0, 0xFFFF);
+        std::wstringstream ss;
+        ss << base << L"_" << std::hex << std::setw(4) << std::setfill(L'0') << dis(gen);
+        return ss.str();
+    }
+
+    bool PromptYesNo(const std::string& prompt, Logger& logger, LogLevel level = LogLevel::Warn) {
+        std::cout << prompt << " (y/n): ";
+        std::string choice;
+        std::getline(std::cin, choice);
+        if (choice.empty()) return false;
+        char c = std::tolower(choice[0]);
+        bool result = (c == 'y');
+        logger.log(std::string("User selected: ") + (result ? "Yes" : "No"), level);
+        return result;
+    }
+
+    std::wstring GetUserInput(const std::wstring& prompt) {
+        std::wcout << prompt;
+        std::wstring input;
+        std::getline(std::wcin, input);
+        return input;
+    }
 }
 
 bool IsAdmin(Logger& logger) {
@@ -117,13 +150,6 @@ bool IsValidSysFile(const std::wstring& path, Logger& logger) {
     return true;
 }
 
-std::wstring GetServiceName(const std::wstring& path) {
-    size_t pos = path.find_last_of(L"\\/");
-    std::wstring filename = (pos != std::wstring::npos) ? path.substr(pos + 1) : path;
-    pos = filename.find_last_of(L".");
-    return (pos != std::wstring::npos) ? filename.substr(0, pos) : filename;
-}
-
 bool ServiceExists(ServiceHandle& scm, const std::wstring& name) {
     ServiceHandle svc(OpenServiceW(scm, name.c_str(), SERVICE_QUERY_STATUS));
     return svc.valid();
@@ -152,14 +178,14 @@ bool DeleteDriverFile(const std::wstring& path, Logger& logger) {
     return true;
 }
 
-ServiceHandle CreateDriverService(ServiceHandle& scm, const std::wstring& name, const std::wstring& path, Logger& logger) {
+ServiceHandle CreateDriverService(ServiceHandle& scm, const std::wstring& name, const std::wstring& path, DWORD startType, Logger& logger) {
     ServiceHandle svc(CreateServiceW(
         scm,
         name.c_str(),
         name.c_str(),
         SERVICE_ALL_ACCESS,
         SERVICE_KERNEL_DRIVER,
-        SERVICE_BOOT_START,
+        startType,
         SERVICE_ERROR_NORMAL,
         path.c_str(),
         NULL, NULL, NULL, NULL, NULL
@@ -189,30 +215,11 @@ void PrintBanner() {
         << std::endl;
 }
 
-
-std::wstring GetUserInput(const std::wstring& prompt) {
-    std::wcout << prompt;
-    std::wstring input;
-    std::getline(std::wcin, input);
-    return input;
-}
-
-bool PromptYesNo(const std::string& prompt, Logger& logger, LogLevel level = LogLevel::Warn) {
-    std::cout << prompt << " (y/n): ";
-    std::string choice;
-    std::getline(std::cin, choice);
-    if (choice.empty()) return false;
-    char c = std::tolower(choice[0]);
-    bool result = (c == 'y');
-    logger.log(std::string("User selected: ") + (result ? "Yes" : "No"), level);
-    return result;
-}
-
 void InstallDriver(Logger& logger) {
     logger.log("Driver installation selected.", LogLevel::Info);
 
-    std::wstring rawPath = GetUserInput(L"Enter full path to .sys driver (or drag & drop): ");
-    std::wstring driverPath = SanitizePath(rawPath);
+    std::wstring rawPath = Helpers::GetUserInput(L"Enter full path to .sys driver (or drag & drop): ");
+    std::wstring driverPath = Helpers::SanitizePath(rawPath);
 
     if (driverPath.empty()) {
         logger.log("No path entered.", LogLevel::Error);
@@ -226,7 +233,11 @@ void InstallDriver(Logger& logger) {
     }
     logger.log("Driver file validated.");
 
-    std::wstring serviceName = GetServiceName(driverPath);
+    std::filesystem::path fsPath(driverPath);
+    logger.log("Driver filename: " + fsPath.filename().string());
+    logger.log("Driver directory: " + fsPath.parent_path().string());
+
+    std::wstring serviceName = Helpers::GetServiceName(driverPath);
     logger.log("Service name: " + std::string(serviceName.begin(), serviceName.end()));
 
     ServiceHandle scm(OpenSCManagerW(NULL, NULL, SC_MANAGER_ALL_ACCESS));
@@ -238,7 +249,7 @@ void InstallDriver(Logger& logger) {
 
     if (ServiceExists(scm, serviceName)) {
         logger.log("Service name already exists.", LogLevel::Warn);
-        if (PromptYesNo("Overwrite existing service?", logger)) {
+        if (Helpers::PromptYesNo("Overwrite existing service?", logger)) {
             if (!DeleteService(scm, serviceName, logger)) {
                 logger.logError("Failed to delete existing service.");
                 return;
@@ -249,23 +260,44 @@ void InstallDriver(Logger& logger) {
         }
     }
 
-    ServiceHandle svc = CreateDriverService(scm, serviceName, driverPath, logger);
+    std::cout << "Select service start type:\n"
+              << "  [1] Demand Start (default)\n"
+              << "  [2] System Start\n"
+              << "  [3] Boot Start\n"
+              << "Enter choice: ";
+    std::string startTypeChoice;
+    std::getline(std::cin, startTypeChoice);
+    DWORD startType = SERVICE_DEMAND_START;
+    if (!startTypeChoice.empty()) {
+        if (startTypeChoice[0] == '2') startType = SERVICE_SYSTEM_START;
+        else if (startTypeChoice[0] == '3') startType = SERVICE_BOOT_START;
+    }
+
+    ServiceHandle svc = CreateDriverService(scm, serviceName, driverPath, startType, logger);
     if (!svc.valid()) {
         logger.logError("Failed to create service.");
         return;
     }
     logger.log("Service created successfully.", LogLevel::Success);
 
-    logger.log("Boot-start drivers are loaded at system boot. Please reboot to activate the driver.", LogLevel::Warn);
+    if (Helpers::PromptYesNo("Start driver now (no reboot required)?", logger, LogLevel::Info)) {
+        if (!StartServiceW(svc, 0, nullptr)) {
+            logger.logError("Failed to start driver service.");
+        } else {
+            logger.log("Driver started successfully.", LogLevel::Success);
+        }
+    } else {
+        logger.log("Boot/system start selected. Driver will load at next boot.", LogLevel::Warn);
+    }
 
-    logger.log("Setup complete. Driver will load at next boot.", LogLevel::Success);
+    logger.log("Setup complete.", LogLevel::Success);
 }
 
 void UninstallDriver(Logger& logger) {
     logger.log("Driver uninstallation selected.", LogLevel::Info);
 
-    std::wstring rawPath = GetUserInput(L"Enter full path to .sys driver to uninstall (or drag & drop): ");
-    std::wstring driverPath = SanitizePath(rawPath);
+    std::wstring rawPath = Helpers::GetUserInput(L"Enter full path to .sys driver to uninstall (or drag & drop): ");
+    std::wstring driverPath = Helpers::SanitizePath(rawPath);
 
     if (driverPath.empty()) {
         logger.log("No path entered.", LogLevel::Error);
@@ -273,7 +305,11 @@ void UninstallDriver(Logger& logger) {
     }
     logger.log("Sanitized driver path: " + std::string(driverPath.begin(), driverPath.end()));
 
-    std::wstring serviceName = GetServiceName(driverPath);
+    std::filesystem::path fsPath(driverPath);
+    logger.log("Driver filename: " + fsPath.filename().string());
+    logger.log("Driver directory: " + fsPath.parent_path().string());
+
+    std::wstring serviceName = Helpers::GetServiceName(driverPath);
     logger.log("Service name: " + std::string(serviceName.begin(), serviceName.end()));
 
     ServiceHandle scm(OpenSCManagerW(NULL, NULL, SC_MANAGER_ALL_ACCESS));
@@ -295,7 +331,7 @@ void UninstallDriver(Logger& logger) {
     }
 
     if (PathFileExistsW(driverPath.c_str())) {
-        if (PromptYesNo("Delete driver file as well?", logger, LogLevel::Warn)) {
+        if (Helpers::PromptYesNo("Delete driver file as well?", logger, LogLevel::Warn)) {
             if (DeleteDriverFile(driverPath, logger)) {
                 logger.log("Driver file removed.", LogLevel::Success);
             }
