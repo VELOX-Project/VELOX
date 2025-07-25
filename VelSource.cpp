@@ -180,19 +180,24 @@ ServiceHandle CreateDriverService(ServiceHandle& scm, const std::wstring& name, 
 
 void PrintBanner() {
     std::cout << COLOR_INFO
-        << "   ____   ______  __    ___   ____  \n"
-        << "  / __ \\ / ____/ / /   /   | / __ \\ \n"
-        << " / / / // /_    / /   / /| |/ /_/ / \n"
-        << "/ /_/ // __/   / /___/ ___ / ____/  \n"
-        << "\\____//_/     /_____/_/  |_/_/      \n"
-        << "-------------------------------------\n"
-        << " VELOX - Professional Driver Loader  \n"
-        << "-------------------------------------\n"
+        << "\n"
+        << " __      ________ _      ______   __  \n"
+        << " \\ \\    / /  ____| |    / __ \\ \\ / /  \n"
+        << "  \\ \\  / /| |__  | |   | |  | \\ V /   \n"
+        << "   \\ \\/ / |  __| | |   | |  | |> <    \n"
+        << "    \\  /  | |____| |___| |__| / . \\   \n"
+        << "     \\/   |______|______\\____/_/ \\_\\  \n"
+        << "                                      \n"
+        << "------------------------------------------\n"
+        << " VELOX - Professional Driver Loader\n"
+        << "------------------------------------------\n"
         << " For legitimate development & research\n"
-        << " Any use of this will not be my problem. \n"
-        << "-------------------------------------\n"
-        << COLOR_RESET;
+        << " Absolutely NO cheating or bypassing!\n"
+        << "------------------------------------------\n"
+        << COLOR_RESET << std::endl;
 }
+
+
 
 std::wstring GetUserInput(const std::wstring& prompt) {
     std::wcout << COLOR_INFO << prompt << COLOR_RESET;
